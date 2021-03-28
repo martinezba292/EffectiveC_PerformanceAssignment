@@ -1,0 +1,5 @@
+﻿cl : command line warning D9035: option 'Gm' has been deprecated and will be removed in a future release
+  Performance2.cpp
+C:\Users\manue\Desktop\Sheffield\C++Assesment\Performance Assignment Skeleton\Performance2\Performance2.cpp(118,61): warning C4244: 'return': conversion from 'float' to 'uint8_t', possible loss of data
+Performance2.obj : warning LNK4075: ignoring '/EDITANDCONTINUE' due to '/SAFESEH' specification
+  Performance2.vcxproj -> C:\Users\manue\Desktop\Sheffield\C++Assesment\Performance Assignment Skeleton\Debug\Performance.exe
