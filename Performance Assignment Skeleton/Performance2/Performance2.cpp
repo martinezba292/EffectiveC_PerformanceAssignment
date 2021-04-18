@@ -3,6 +3,7 @@
 
 #include "stdafx.h"
 #include "Performance2.h"
+#include <thread>
 
 
 #ifdef _DEBUG
@@ -292,6 +293,19 @@ CImage* ProcessImage(CImage* src, CImage* dst) {
 }
 
 
+void executeThread(vector<filesystem::directory_entry> v) {
+	for (auto& entry : v) {
+		ImgInfo imgInfo = ProcessImage(entry.path().c_str(), entry.path().filename().c_str());
+		CString image_path("../output/");
+		image_path += imgInfo.filename;
+		image_path += ".png";
+		imgInfo.img->Save(image_path);
+		imgInfo.img->Destroy();
+		delete(imgInfo.img);
+	}
+}
+
+
 int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 {
 	int nRetCode = 0;
@@ -312,53 +326,53 @@ int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 		//--------------------------------------------------------------------------------------
 		// Insert your code from here...
 
+
 		string path("./../input/");
-		string extension(".JPG");
+    string extension(".JPG");
 
-#if 1
-		//TODO: Send 4 threads with 3 images in each one
-		//std::vector<ImgInfo> images;
+		vector<filesystem::directory_entry> entries;
 		for (auto& f : filesystem::directory_iterator(path)) {
-			if (f.path().extension() == extension) {
-				ImgInfo imgInfo = ProcessImage(f.path().c_str(), f.path().filename().c_str());
-        CString image_path("../output/");
-        image_path += imgInfo.filename;
-        image_path += ".png";
-        imgInfo.img->Save(image_path);
-        imgInfo.img->Destroy();
-        delete(imgInfo.img);
-				//images.push_back(imgInfo);
-			}
+			//Getting directory entries of JPG images
+			if (f.path().extension() == extension)
+				entries.push_back(f);
 		}
 
-		//for (auto& img : images) {
-  //    CString image_path("../output/");
-		//	image_path += img.filename;
-  //    image_path += ".png";
-		//	img.img->Save(image_path);
-		//	img.img->Destroy();
-		//	delete(img.img);
-		//}
+		if (entries.size() > 8) {
+			//Sending 3 threads if more than 8 images are found
+      int half_size = (int)(entries.size() / 3);
 
-#else
-		for (auto& f : filesystem::directory_iterator(path)) {
-			if (f.path().extension() == extension) {
-				CImage inputimg;
-				CImage outputimg;
-				inputimg.Load(f.path().c_str());
-				outputimg.Create(inputimg.GetWidth() << 1, inputimg.GetHeight() << 1, 24);
-        ProcessImage(&inputimg, &outputimg);
-				CString filename = f.path().filename().c_str();
-				filename.Delete(filename.GetLength() - 4, 4);
-        CString image_path("../output/");
-        image_path += filename;
-        image_path += ".png";
-        outputimg.Save(image_path);
-				inputimg.Destroy();
-				outputimg.Destroy();
-			}
+			//Split vector that contains paths and filenames
+      vector<filesystem::directory_entry> thread_data1(entries.begin(), entries.begin() + half_size);
+      vector<filesystem::directory_entry> thread_data2(entries.begin() + half_size, entries.begin() + (half_size << 1));
+      vector<filesystem::directory_entry> thread_data3(entries.begin() + (half_size << 1), entries.end());
+
+			//Sending threads
+      std::thread first(executeThread, thread_data1);
+      std::thread second(executeThread, thread_data2);
+      std::thread third(executeThread, thread_data3);
+
+			//Waiting for threads to end
+      first.join();
+      second.join();
+			third.join();
+
+		} 
+		else if (entries.size() > 4) {
+			//Sending 2 threads if more than 4 images are found
+		  int half_size = (int)(entries.size() >> 1);
+		  vector<filesystem::directory_entry> thread_data1(entries.begin(), entries.begin() + half_size);
+		  vector<filesystem::directory_entry> thread_data2(entries.begin() + half_size, entries.end());
+		  std::thread first(executeThread, thread_data1);
+		  std::thread second(executeThread, thread_data2);
+			 
+			first.join();
+			second.join();
+
 		}
-#endif
+		else {
+			//If 4 images or less, the application runs in the main thread
+			executeThread(entries);
+		}
 
 		//-------------------------------------------------------------------------------------------------------
 		// How long did it take?...   DO NOT CHANGE FROM HERE...
