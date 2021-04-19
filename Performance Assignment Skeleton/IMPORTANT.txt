@@ -1,0 +1,6 @@
+- You must put images in a folder called "input" in order to the images be proccesed
+
+- The result will be stored in the "output" folder.
+
+- The application was tested with a GTX 1050 with 2GB of memory. 
+  It will require between 1GB and 2GB of memory in runtime, but it shouldn't reach 2GB at any time.

@@ -101,50 +101,78 @@ CWinApp theApp;  // The one and only application object
 
 using namespace std;
 
-struct ImgInfo {
-  int w, h;
-  CString filename;
-  CImage* img;
-};
-
+//Function that brights a pixel
 void BrightSum(uint8_t* pixel) {
 	 *pixel += 100;
 }
-
+/*
+It assigns the maximum possible value to a pixel.
+As each pixel component will be made up of unsigned chars, the maximum value will be 255.
+Only executed if pixel value is up 155
+*/
 void BrightMax(uint8_t* pixel) {
 	*pixel = 255;
 }
 
-
+//Applies linear interpolation between 2 values(s and e) regarding 't' factor
 uint8_t pixelLerp(uint8_t s, uint8_t e, float t) { return s + (e - s) * t; }
 
+//Applies bilinear interpolation between 4 values
+//Will be used to scale images without losing quality
 uint8_t bPixelLerp(uint8_t c00, uint8_t c10, uint8_t c01, uint8_t c11, float tx, float ty) {
   return pixelLerp(pixelLerp(c00, c10, tx), pixelLerp(c01, c11, tx), ty);
 }
 
+//Scales an image by scalex and scaley values using bilinear interpolation
 CImage* Scale(CImage* src, int scalex, int scaley) {
 	int srcw = src->GetWidth();
 	int srch = src->GetHeight();
+
+	//Getting new width and height
   int newWidth = srcw * scalex;
   int newHeight = srch * scaley;
+
+	/*
+	It contains information about how the image is structured in memory.
+	A negative pitch value means the first pixel is in the bottom left corner.
+	On the contrary, a positive value means that the origin is in the top left corner of the image
+	It's used to access the pixels correctly
+	*/
 	int srcpitch = src->GetPitch();
+
+	//Returns a pointer to the start of the image
 	uint8_t* srcb = (uint8_t*)src->GetBits();
+
+	/*
+	GetBPP returns the number of bits per pixel
+	Dividing this by 8 will return the bytes per pixel
+	As the images are JPG files, they don't have alpha channel, only RGB,
+	so the expected value is 3 channels per pixel
+	*/
 	int channels = src->GetBPP() >> 3;
 
+
 	CImage* dst = new CImage();
+
+	/*
+	Creating the new scaled image with 24 bits per pixel(RGB)
+	and getting its pitch and memory address
+	*/
 	dst->Create(newWidth, newHeight, 24);
 	int dstpitch = dst->GetPitch();
 	uint8_t* dstb = (uint8_t*)dst->GetBits();
+	float wdiv = 1.0f / (float)(newWidth);
+	float hdiv = 1.0f / (float)(newHeight);
 
   int x, y;
 	for (y = 0; y < newHeight; y++) {
 		for (x = 0; x < newWidth; x++) {
 			//Mapping dst pixels into src pixel
-			float wx = (x / (float)(newWidth)) * (srcw - 1);
-			float hy = (y / (float)(newHeight)) * (srch - 1);
+			float wx = (float)(x * wdiv) * (srcw - 1);
+			float hy = (float)(y * hdiv) * (srch - 1);
 
-			int wxi = (int)wx;
-			int hyi = (int)hy;
+			int wxi = (int)(wx);
+			int hyi = (int)(hy);
 
 			//current pixel
 			uint8_t c00 = srcb[hyi * srcpitch + wxi * channels];
@@ -155,29 +183,40 @@ CImage* Scale(CImage* src, int scalex, int scaley) {
 			//southeast pixel
 			uint8_t c11 = srcb[(hyi + 1) * srcpitch + ((wxi + 1) * channels)];
 
+			/*
+			Obtaining a new pixel from the bilinear interpolation of the pixels above
+			The floating part of the difference between pixel indices will be the curve value
+			*/
 			uint8_t result = bPixelLerp(c00, c10, c01, c11, wx - wxi, hy - hyi);
+
+			/*
+			Writting bytes of the destination image.
+			As the image have to be in grayscale, all the channels contains the same value
+			*/
 			dstb[y * dstpitch + x * channels] = result;
 			dstb[y * dstpitch + x * channels + 1] = result;
 			dstb[y * dstpitch + x * channels + 2] = result;
+			//NOTE: I tried to create new images as 8bit images in order to write only 1 byte per pixel, but CImage saved them completely black
 		}
 	}
 
   return dst;
 }
 
-
-
-ImgInfo ProcessImage(CString path, CString filename) {
+void ProcessImage(filesystem::directory_entry entry) {
 	CImage img;
-	img.Load(path);
+	img.Load(entry.path().c_str());
 	int32_t width = img.GetWidth();
 	int32_t height = img.GetHeight();
 	int32_t channels = img.GetBPP() >> 3;
 	CImage auximg;
-	auximg.Create(width, height, 24);
+
+	//Creating the new image with the width and height inverted since images are loaded rotated.
+	//Memory accesses are performed faster in rows
+	auximg.Create(height, width, 24);
 
 	/*Functions to brighten images
-	Pointer array save us from if statements to check the pixel overflow*/
+	Pointer array save us from "if" statements to check the pixel overflow*/
 	void(*bright_funcptr[2])(uint8_t * pixel);
 	bright_funcptr[0] = BrightMax;
 	bright_funcptr[1] = BrightSum;
@@ -190,121 +229,69 @@ ImgInfo ProcessImage(CString path, CString filename) {
 
 	int x, y;
 	for (y = 0; y < height; ++y) {
-		//We go through the dst pixels in the opposite direction to rotate the image
-		uint8_t* dstline = dst + (height - y - 1) * dstpitch;
+		//Getting pointer to source image row
 		uint8_t* srcline = src + y * srcpitch;
+
+		/*
+		Getting the destiny image index to access the right column
+		Since the image is rotated, we use the height as width
+		*/
+		uint32_t dstline_index = (height - y - 1) * channels;
 		for (x = 0; x < width; ++x) {
+			//Getting the current pixel of the source image
 			uint8_t* current = srcline + x * channels;
+
+			//Applying grayscale
+			//Average value between the 3 channels of each pixel in the source image
       uint8_t r = *(current);
       uint8_t g = *(current + 1);
       uint8_t b = *(current + 2);
 			uint8_t grayscale = (uint8_t)((r + g + b) / 3);
 
-			current = dstline + (width - x - 1) * channels;
+			//Getting the dst pixel 
+			current = (dst + x * dstpitch) + dstline_index;
 
+			/*
+			Increasing pixel's color saturation with function pointers
+			Avoiding "if(pixel > 255) pixel = 255"
+			*/
       *(current) = grayscale;
 			int32_t j = (*current < max);
 			bright_funcptr[j](current);
-			++current;
 
-      *(current) = grayscale;
-      j = (*current < max);
-      bright_funcptr[j](current);
-      ++current;
-
-      *(current) = grayscale;
-      j = (*current < max);
-      bright_funcptr[j](current);
-      ++current;
+			//As the image will be grayscale, the three channels will have the same value
+			*(current + 1) = *current;
+			*(current + 2) = *current;
+      //NOTE: I tried to create new images as 8bit images in order to write only 1 byte per pixel, but CImage saved them completely black
 		}
 	}
 
-	////Fill image information
-	ImgInfo new_img{};
-	new_img.filename = filename;
+	//Fill image information
+	CString filename = entry.path().filename().c_str();
+
 	//Scale image x2 using bilinear interpolation
-	new_img.img = Scale(&auximg, 2, 2);
-	new_img.w = width << 1;
-	new_img.h = height << 1;
-  new_img.filename.Delete(filename.GetLength() - 4, 4);
+	CImage* final_img = Scale(&auximg, 2, 2);
 
+	//Removing the extension from the filename(".JPG" will be removed in this case)
+  filename.Delete(filename.GetLength() - 4, 4);
+
+	//Directory where the output images will be stored
+  CString image_path("../output/");
+  image_path += filename;
+  image_path += ".png";
+
+	//Saving new image and freeing up memory
 	auximg.Destroy();
+  final_img->Save(image_path);
 	img.Destroy();
-
-	return new_img;
+  final_img->Destroy();
+  delete(final_img);
 }
 
-
-CImage* ProcessImage(CImage* src, CImage* dst) {
-  int srcw = src->GetWidth();
-  int srch = src->GetHeight();
-  int newWidth = dst->GetWidth();
-  int newHeight = dst->GetHeight();
-  int srcpitch = src->GetPitch();
-	uint8_t* srcb = (uint8_t*)src->GetBits();
-  int channels = src->GetBPP() >> 3;
-
-  int dstpitch = dst->GetPitch();
-	uint8_t* dstb = (uint8_t*)dst->GetBits();
-
-  uint8_t max = 155; //MAX value a pixel can have to apply brighten func(rgb + 100)
-  void(*bright_funcptr[2])(uint8_t * pixel);
-  bright_funcptr[0] = BrightMax;
-  bright_funcptr[1] = BrightSum;
-
-  int x, y;
-  for (y = 0; y < newHeight; y++) {
-    for (x = 0; x < newWidth; x++) {
-      //Mapping dst pixels into src pixel
-      float wx = (x / (float)(newWidth)) * (srcw - 1);
-      float hy = (y / (float)(newHeight)) * (srch - 1);
-
-      int wxi = (int)wx;
-      int hyi = (int)hy;
-
-      //current pixel
-      uint32_t* c00 = (uint32_t*)&srcb[hyi * srcpitch + wxi * channels];
-      //east pixel
-      uint32_t* c10 = (uint32_t*)&srcb[hyi * srcpitch + ((wxi + 1) * channels)];
-      //south pixel
-      uint32_t* c01 = (uint32_t*)&srcb[(hyi + 1) * srcpitch + wxi * channels];
-      //southeast pixel
-      uint32_t* c11 = (uint32_t*)&srcb[(hyi + 1) * srcpitch + ((wxi + 1) * channels)];
-
-      //Bilinear interpolation
-      uint8_t r = bPixelLerp(*c00 & 0xFF, *c10 & 0xFF, *c01 & 0xFF, *c11 & 0xFF, wx - wxi, hy - hyi);
-      uint8_t g = bPixelLerp((*c00 >> 8) & 0xFF, (*c10 >> 8) & 0xFF, (*c01 >> 8) & 0xFF, (*c11 >> 8) & 0xFF, wx - wxi, hy - hyi);
-      uint8_t b = bPixelLerp(*c00 >> 16 & 0xFF, *c10 >> 16 & 0xFF, *c01 >> 16 & 0xFF, *c11 >> 16 & 0xFF, wx - wxi, hy - hyi);
-
-      //Gray scale
-      uint8_t grayscale = ((r + g + b) / 3);
-
-      int32_t j = (grayscale < max);
-      bright_funcptr[j](&grayscale);
-
-      //Write the new image pixels rotated
-      dstb[(newHeight - y - 1) * dstpitch + (newWidth - x - 1) * channels] = grayscale;
-      dstb[(newHeight - y - 1) * dstpitch + (newWidth - x - 1) * channels + 1] = grayscale;
-      dstb[(newHeight - y - 1) * dstpitch + (newWidth - x - 1) * channels + 2] = grayscale;
-    }
-  }
-
-  return dst;
-}
-
-
+//Executes the ProcessImage function for each entry in the vector
 void executeThread(vector<filesystem::directory_entry> v) {
-	for (auto& entry : v) {
-		ImgInfo imgInfo = ProcessImage(entry.path().c_str(), entry.path().filename().c_str());
-		CString image_path("../output/");
-		image_path += imgInfo.filename;
-		image_path += ".png";
-		imgInfo.img->Save(image_path);
-		imgInfo.img->Destroy();
-		delete(imgInfo.img);
-	}
+	for_each(v.begin(), v.end(), ProcessImage);
 }
-
 
 int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 {
@@ -326,8 +313,9 @@ int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 		//--------------------------------------------------------------------------------------
 		// Insert your code from here...
 
-
+		//Path from which the images are taken
 		string path("./../input/");
+		//Only images with this extension will be collected
     string extension(".JPG");
 
 		vector<filesystem::directory_entry> entries;
@@ -339,35 +327,35 @@ int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 
 		if (entries.size() > 8) {
 			//Sending 3 threads if more than 8 images are found
-      int half_size = (int)(entries.size() / 3);
+      int half_size = (int)(entries.size() >> 2);
 
-			//Split vector that contains paths and filenames
-      vector<filesystem::directory_entry> thread_data1(entries.begin(), entries.begin() + half_size);
-      vector<filesystem::directory_entry> thread_data2(entries.begin() + half_size, entries.begin() + (half_size << 1));
-      vector<filesystem::directory_entry> thread_data3(entries.begin() + (half_size << 1), entries.end());
-
-			//Sending threads
-      std::thread first(executeThread, thread_data1);
-      std::thread second(executeThread, thread_data2);
-      std::thread third(executeThread, thread_data3);
+			//Split vector that contains paths and filenames and sending thread with the data
+      vector<filesystem::directory_entry> image_paths1(entries.begin(), entries.begin() + half_size);
+      thread first(executeThread, image_paths1);
+      vector<filesystem::directory_entry> image_paths2(entries.begin() + half_size, entries.begin() + (half_size << 1));
+      thread second(executeThread, image_paths2);
+      vector<filesystem::directory_entry> image_paths3(entries.begin() + (half_size << 1), (entries.begin() + (half_size * 3)));
+      thread third(executeThread, image_paths3);
+      vector<filesystem::directory_entry> image_paths4((entries.begin() + (half_size * 3)), entries.end());
+			executeThread(image_paths4);
 
 			//Waiting for threads to end
       first.join();
       second.join();
 			third.join();
-
 		} 
 		else if (entries.size() > 4) {
 			//Sending 2 threads if more than 4 images are found
 		  int half_size = (int)(entries.size() >> 1);
-		  vector<filesystem::directory_entry> thread_data1(entries.begin(), entries.begin() + half_size);
-		  vector<filesystem::directory_entry> thread_data2(entries.begin() + half_size, entries.end());
-		  std::thread first(executeThread, thread_data1);
-		  std::thread second(executeThread, thread_data2);
+
+		  vector<filesystem::directory_entry> image_paths1(entries.begin(), entries.begin() + half_size);
+		  vector<filesystem::directory_entry> image_paths2(entries.begin() + half_size, entries.end());
+		  
+			thread first(executeThread, image_paths1);
+		  thread second(executeThread, image_paths2);
 			 
 			first.join();
 			second.join();
-
 		}
 		else {
 			//If 4 images or less, the application runs in the main thread
