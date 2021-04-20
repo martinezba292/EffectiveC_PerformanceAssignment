@@ -204,6 +204,7 @@ CImage* Scale(CImage* src, int scalex, int scaley) {
 }
 
 void ProcessImage(filesystem::directory_entry entry) {
+
 	CImage img;
 	img.Load(entry.path().c_str());
 	int32_t width = img.GetWidth();
@@ -212,7 +213,6 @@ void ProcessImage(filesystem::directory_entry entry) {
 	CImage auximg;
 
 	//Creating the new image with the width and height inverted since images are loaded rotated.
-	//Memory accesses are performed faster in rows
 	auximg.Create(height, width, 24);
 
 	/*Functions to brighten images
