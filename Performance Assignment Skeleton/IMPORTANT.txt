@@ -2,5 +2,5 @@
 
 - The result will be stored in the "output" folder.
 
-- The application was tested with a GTX 1050 with 2GB of memory. 
+- The application was tested with a GTX 1050 with 2GB of memory and 12 images in 4 threads. 
   It will require between 1GB and 2GB of memory in runtime, but it shouldn't reach 2GB at any time.
