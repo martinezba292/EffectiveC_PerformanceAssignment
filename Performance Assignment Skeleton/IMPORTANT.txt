@@ -4,3 +4,5 @@
 
 - The application was tested with a GTX 1050 with 2GB of memory and 12 images in 4 threads. 
   It will require between 1GB and 2GB of memory in runtime, but it shouldn't reach 2GB at any time.
+
+- Link to images: https://drive.google.com/drive/folders/1jOBnJvJUymjRQIYYaw0j7_dPCy8Tw7gs?usp=sharing
