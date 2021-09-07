@@ -158,7 +158,12 @@ CImage* Scale(CImage* src, int scalex, int scaley) {
 	Creating the new scaled image with 24 bits per pixel(RGB)
 	and getting its pitch and memory address
 	*/
-	dst->Create(newWidth, newHeight, 24);
+	bool c = dst->Create(newWidth, newHeight, 24);
+	if (!c) {
+		std::cout << "\nInsuficient memory for creating new image. Waiting for memory to be available..." << std::endl;
+		return nullptr;
+	}
+
 	int dstpitch = dst->GetPitch();
 	uint8_t* dstb = (uint8_t*)dst->GetBits();
 	float wdiv = 1.0f / (float)(newWidth);
@@ -266,11 +271,16 @@ void ProcessImage(filesystem::directory_entry entry) {
 		}
 	}
 
+	img.Destroy();
+
 	//Fill image information
 	CString filename = entry.path().filename().c_str();
 
 	//Scale image x2 using bilinear interpolation
-	CImage* final_img = Scale(&auximg, 2, 2);
+	CImage* final_img = nullptr;
+	while (!final_img) {
+		final_img = Scale(&auximg, 2, 2);
+	}
 
 	//Removing the extension from the filename(".JPG" will be removed in this case)
   filename.Delete(filename.GetLength() - 4, 4);
@@ -283,7 +293,6 @@ void ProcessImage(filesystem::directory_entry entry) {
 	//Saving new image and freeing up memory
 	auximg.Destroy();
   final_img->Save(image_path);
-	img.Destroy();
   final_img->Destroy();
   delete(final_img);
 }
@@ -328,6 +337,7 @@ int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 		if (entries.size() > 8) {
 			//Sending 3 threads if more than 8 images are found
       int half_size = (int)(entries.size() >> 2);
+      //int half_size = (int)(entries.size() / 3);
 
 			//Split vector that contains paths and filenames and sending thread with the data
       vector<filesystem::directory_entry> image_paths1(entries.begin(), entries.begin() + half_size);

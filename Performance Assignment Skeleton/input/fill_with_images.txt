@@ -1,1 +1,0 @@
-put in this folder the images that you want the application to process

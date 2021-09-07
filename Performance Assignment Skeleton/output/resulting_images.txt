@@ -1,1 +1,0 @@
-When the application ends the output images will be placed here
